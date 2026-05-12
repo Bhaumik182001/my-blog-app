@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # 1. Your React App
+  frontend:
+    image: ${DOCKER_USERNAME}/devops-spa:latest
+    ports:
+      - "80:80"
+    restart: always
+
+  # 2. cAdvisor (Scrapes Docker container metrics)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: always
+
+  # 3. Prometheus (Stores the metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: always
+
+  # 4. Grafana (Visualizes the data)
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: always
