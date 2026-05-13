@@ -24,7 +24,7 @@ This project was strictly engineered to demonstrate mastery of essential Cloud C
 
 ## 🏗️ Architecture & Flow
 1. **Version Control:** Developer pushes code to the `main` branch on GitHub.
-2. **Infrastructure (Terraform):** An AWS EC2 `t3.micro` instance and corresponding Security Groups (allowing HTTP and SSH) are provisioned via code.
+2. **Infrastructure (Terraform):** An AWS EC2 `t2.micro` instance and corresponding Security Groups (allowing HTTP and SSH) are provisioned via code.
 3. **CI/CD Build (Jenkins):** Jenkins catches the GitHub Webhook, clones the repository, and initiates the build pipeline.
 4. **Containerization (Docker):** A multi-stage build triggers:
     * *Stage 1 (Node):* Installs dependencies and compiles the React application (`npm run build`).
@@ -52,53 +52,60 @@ This project was strictly engineered to demonstrate mastery of essential Cloud C
 ## 📁 Repository Structure
 
 * `src/` - React Application Source Code (EngBlog)
-  * `pages/` - Home, About, and Contact views
-  * `components/` - UI Components
-  * `main.jsx` - React Entry Point
 * `public/` - Static Assets & SVGs
 * `Dockerfile` - Multi-stage build instructions for Node + Nginx
 * `nginx.conf` - Custom Nginx configuration for SPA routing
+* `main.tf` - Terraform Infrastructure as Code script
+* `Jenkinsfile` - Declarative CI/CD pipeline definition
 * `package.json` - Node dependencies and build scripts
-* `tailwind.config.js` - Tailwind CSS configuration
-* `README.md` - Project documentation
-
-*(Note: Infrastructure files like `main.tf`, `Jenkinsfile`, and `docker-compose.yml` are managed alongside this repository for the complete pipeline).*
 
 ---
 
-## ⚙️ Deployment & Execution Guide
+## 🚀 Quick Start & Setup Guide
 
-### 1. Infrastructure Provisioning (Terraform)
-This project uses Terraform to eliminate manual cloud configuration.
-1. Ensure the AWS CLI is configured locally with valid IAM credentials.
-2. Navigate to the directory containing `main.tf`.
-3. Initialize the Terraform backend and review the execution plan:
-   > terraform init
-   > terraform plan
-4. Provision the AWS environment (EC2, Security Groups, Docker installation script):
-   > terraform apply -auto-approve
+This guide provides step-by-step instructions to reproduce this DevOps pipeline from scratch.
 
-### 2. Containerization (Local Validation)
-To build and test the multi-stage Docker container locally before pushing to the pipeline:
+### Prerequisites
+Ensure the following tools are installed on your local machine:
+* Git
+* Docker Desktop
+* HashiCorp Terraform
+* AWS CLI (configured with valid IAM credentials via `aws configure`)
+* Ngrok (for local Jenkins tunneling)
 
-> docker build -t devops-spa .
-> docker run -d -p 8080:80 devops-spa
+### Step 1: Local Setup & Validation
+Clone the repository and verify the multi-stage Docker build locally.
 
-*Note: The included `nginx.conf` features a `try_files` directive explicitly designed to route all unhandled requests to `index.html`, ensuring seamless React Router navigation without 404 errors.*
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+cd YOUR_REPO_NAME
+docker build -t devops-spa .
+docker run -d -p 8080:80 devops-spa
 
-### 3. Continuous Integration & Deployment (Jenkins)
-The CI/CD pipeline is handled by a containerized Jenkins instance. 
-1. A GitHub Webhook is configured (via an Ngrok tunnel) to trigger the pipeline on a push to the `main` branch.
-2. The pipeline executes the following stages:
-   * **Stage 1 (Checkout):** Pulls the latest code from GitHub.
-   * **Stage 2 (Build):** Executes the multi-stage Docker build.
-   * **Stage 3 (Deploy):** SSHs into the Terraform-provisioned AWS EC2 instance, stops the old container, and starts the newly built image on Port 80.
+Navigate to `http://localhost:8080` in your browser to verify the React application is running correctly behind the Nginx web server.
 
-### 4. Observability Stack
-To ensure high availability and performance tracking, the infrastructure includes a monitoring stack deployed alongside the web application:
-* **cAdvisor:** Attached to the Docker daemon to expose container resource usage.
-* **Prometheus:** Configured to scrape cAdvisor metrics at regular intervals.
-* **Grafana:** Connected to Prometheus as a data source, providing visual dashboards for instance RAM, CPU load, and network traffic.
+### Step 2: Infrastructure Provisioning (Terraform)
+Automate the creation of the AWS environment. The `main.tf` script will provision a `t2.micro` instance, configure security groups (ports 80, 22), and automatically install Docker upon boot.
+
+terraform init
+terraform plan
+terraform apply -auto-approve
+
+*Take note of the public AWS IP address outputted at the end of the Terraform run.*
+
+### Step 3: CI/CD Pipeline Configuration (Jenkins)
+Ensure you have a Jenkins instance running (either locally via Docker or hosted).
+
+1. **Expose Local Jenkins (If applicable):** Run `ngrok http 8080` to generate a public URL for your local Jenkins container.
+2. **Configure GitHub Webhook:** In your GitHub repository settings, navigate to Webhooks. Add your Jenkins URL (e.g., `https://your-ngrok-url.app/github-webhook/`) and set the Content type to `application/json`.
+3. **Create Jenkins Pipeline:** Create a new Pipeline project in Jenkins, connect it to your GitHub repository, and point it to the `Jenkinsfile`.
+4. **Trigger Deployment:** Push a code change to the `main` branch. Jenkins will automatically intercept the webhook, build the new Docker image, and SSH into the AWS EC2 instance to deploy it.
+
+### Step 4: Observability & Monitoring
+Once the application is deployed, the monitoring stack (cAdvisor, Prometheus, Grafana) will initialize alongside it.
+
+1. Navigate to `http://YOUR_AWS_IP:3000` to access the Grafana dashboard.
+2. Add Prometheus (`http://YOUR_AWS_IP:9090`) as the data source.
+3. Import the standard Docker Monitoring dashboard to visualize real-time infrastructure metrics.
 
 ---
 
