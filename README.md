@@ -24,7 +24,7 @@ This project was strictly engineered to demonstrate mastery of essential Cloud C
 
 ## 🏗️ Architecture & Flow
 1. **Version Control:** Developer pushes code to the `main` branch on GitHub.
-2. **Infrastructure (Terraform):** An AWS EC2 `t2.micro` instance and corresponding Security Groups (allowing HTTP and SSH) are provisioned via code.
+2. **Infrastructure (Terraform):** An AWS EC2 `t3.micro` instance and corresponding Security Groups (allowing HTTP and SSH) are provisioned via code.
 3. **CI/CD Build (Jenkins):** Jenkins catches the GitHub Webhook, clones the repository, and initiates the build pipeline.
 4. **Containerization (Docker):** A multi-stage build triggers:
     * *Stage 1 (Node):* Installs dependencies and compiles the React application (`npm run build`).
