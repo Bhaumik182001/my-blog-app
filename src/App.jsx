@@ -1,8 +1,14 @@
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import Home from './pages/Home';
-import About from './pages/About';
-import Contact from './pages/Contact';
-import { useEffect } from 'react';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+  useLocation,
+} from "react-router-dom";
+import Home from "./pages/Home";
+import About from "./pages/About";
+import Contact from "./pages/Contact";
+import { useEffect } from "react";
 
 const ScrollToTop = () => {
   const { pathname } = useLocation();
@@ -25,9 +31,24 @@ const Navbar = () => (
           </span>
         </Link>
         <div className="flex space-x-8">
-          <Link to="/" className="text-slate-400 hover:text-cyan-400 transition-colors font-medium">Home</Link>
-          <Link to="/about" className="text-slate-400 hover:text-cyan-400 transition-colors font-medium">About</Link>
-          <Link to="/contact" className="text-slate-400 hover:text-cyan-400 transition-colors font-medium">Contact</Link>
+          <Link
+            to="/"
+            className="text-slate-400 hover:text-cyan-400 transition-colors font-medium"
+          >
+            Home
+          </Link>
+          <Link
+            to="/about"
+            className="text-slate-400 hover:text-cyan-400 transition-colors font-medium"
+          >
+            About
+          </Link>
+          <Link
+            to="/contact"
+            className="text-slate-400 hover:text-cyan-400 transition-colors font-medium"
+          >
+            Contact
+          </Link>
         </div>
       </div>
     </div>
@@ -39,12 +60,20 @@ const Footer = () => (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="flex flex-col md:flex-row justify-between items-center">
         <div className="flex items-center space-x-2 mb-4 md:mb-0">
-          <span className="text-slate-500 font-medium">© 2026 EngBlog. Build the future.</span>
+          <span className="text-slate-500 font-medium">
+            © 2026 EngBlog. Build the update and bleeding edge future.
+          </span>
         </div>
         <div className="flex space-x-6 text-slate-500">
-          <a href="#" className="hover:text-cyan-400 transition-colors">Twitter</a>
-          <a href="#" className="hover:text-cyan-400 transition-colors">GitHub</a>
-          <a href="#" className="hover:text-cyan-400 transition-colors">Discord</a>
+          <a href="#" className="hover:text-cyan-400 transition-colors">
+            Twitter
+          </a>
+          <a href="#" className="hover:text-cyan-400 transition-colors">
+            GitHub
+          </a>
+          <a href="#" className="hover:text-cyan-400 transition-colors">
+            Discord
+          </a>
         </div>
       </div>
     </div>
