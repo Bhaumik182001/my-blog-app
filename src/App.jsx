@@ -61,7 +61,8 @@ const Footer = () => (
       <div className="flex flex-col md:flex-row justify-between items-center">
         <div className="flex items-center space-x-2 mb-4 md:mb-0">
           <span className="text-slate-500 font-medium">
-            © 2026 EngBlog. Build the update and bleeding edge future.
+            © 2026 EngBlog. Build the update and bleeding edge with react
+            future.
           </span>
         </div>
         <div className="flex space-x-6 text-slate-500">
