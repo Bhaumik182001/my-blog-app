@@ -41,12 +41,17 @@ The content is organized as follows:
 
 <directory_structure>
 .gitignore
+docker-compose.yml
 Dockerfile
 eslint.config.js
 index.html
+infrastructure/.terraform.lock.hcl
+infrastructure/main.tf
+Jenkinsfile
 nginx.conf
 package.json
 postcss.config.js
+prometheus.yml
 public/favicon.svg
 public/icons.svg
 README.md
@@ -67,67 +72,48 @@ vite.config.js
 <files>
 This section contains the contents of the repository's files.
 
-<file path=".gitignore">
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+<file path="docker-compose.yml">
+version: '3.8'
 
-node_modules
-dist
-dist-ssr
-*.local
+services:
+  # 1. Your React App
+  frontend:
+    image: ${DOCKER_USERNAME}/devops-spa:latest
+    ports:
+      - "80:80"
+    restart: always
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-</file>
+  # 2. cAdvisor (Scrapes Docker container metrics)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: always
 
-<file path="Dockerfile">
-# Stage 1: Build the React application
-FROM node:18-alpine AS build
-WORKDIR /app
+  # 3. Prometheus (Stores the metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: always
 
-# Copy package.json and package-lock.json (if available)
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install
-
-# Copy the rest of the application code
-COPY . .
-
-# Build the application for production
-RUN npm run build
-
-# Stage 2: Serve the application with Nginx
-FROM nginx:alpine
-
-# Remove default nginx static assets
-RUN rm -rf /usr/share/nginx/html/*
-
-# Copy the nginx configuration file
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Copy the build output from Stage 1 to nginx html directory
-COPY --from=build /app/dist /usr/share/nginx/html
-
-# Expose port 80
-EXPOSE 80
-
-# Start Nginx server
-CMD ["nginx", "-g", "daemon off;"]
+  # 4. Grafana (Visualizes the data)
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: always
 </file>
 
 <file path="eslint.config.js">
@@ -168,6 +154,177 @@ export default defineConfig([
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
+</file>
+
+<file path="infrastructure/.terraform.lock.hcl">
+# This file is maintained automatically by "terraform init".
+# Manual edits may be lost in future updates.
+
+provider "registry.terraform.io/hashicorp/aws" {
+  version = "6.44.0"
+  hashes = [
+    "h1:lJvGaC4YNXk3TIdrd5GCIyV0gxU1WigQIao8rmcpplc=",
+    "zh:0462747d28f6dcd7b1b723bea9da1600526b7cdcf929ed4be54352d74b0746e6",
+    "zh:0c9b7e7b04050360f609ff5700d8a76227fb4ea84dac92b844d82a2013706705",
+    "zh:2877a6854edf237f9d6c66dc928294cbbcf29d3f52577fb8f232d0cfd11d5c0d",
+    "zh:3347b82e222bbfad326b79c408e53a9252b80c6c762f4dd4f4617583394f0a4e",
+    "zh:33997dbe611b5abf49c87a31f29d8f797c97421f67b71fec8aa688799511b758",
+    "zh:5d5c37375c5e776e6e8f95fb8cbd8009258618b9f51c55551a18adc09ef5814a",
+    "zh:67d6bd61c52ca5f4c37c96a76f6820c9f1902e4b83f89faddf9fd7f17ba0b160",
+    "zh:739588639fa30db7084d6939c2eb9b4dd2d7f58dbb5d5b3b2c4bda2a35dcf521",
+    "zh:9b12af85486a96aedd8d7984b0ff811a4b42e3d88dad1a3fb4c0b580d04fa425",
+    "zh:a953797142df4245bd8f456b9e78690f501a0fff2f58552db4eb2da409cd99e9",
+    "zh:aeb8d616dd34a9f1c5048ed4cdd6d7692db93cd33a468872618d4cd38c4784aa",
+    "zh:dc8420556aca50658247b097de6734259fc3a6012ff1cf96612fca10b3982f9d",
+    "zh:f9083d6d9fb9cbdcd91e38c92f96e67223ecc7ce6d0986bd5eb8e6d52e9aa02b",
+    "zh:f9418aa1e4d29f9026aa6f521e97d085e000902ea929debbbef61135185e3ad4",
+    "zh:fb2494a6c92118055cfb2c114a4fe5c750946a1b0d6be6bf02ab3e37a091fb8b",
+  ]
+}
+</file>
+
+<file path="infrastructure/main.tf">
+# 1. Define the Cloud Provider (AWS Mumbai Region)
+provider "aws" {
+  region = "ap-south-1" 
+}
+
+# 2. Automatically find the latest Amazon Linux image
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023.*-x86_64"]
+  }
+}
+
+# 3. Create a Security Group (Firewall)
+resource "aws_security_group" "spa_sg" {
+  name        = "devops-spa-security-group"
+  description = "Allow HTTP for the web, SSH for Jenkins, and Ports for Monitoring"
+
+  # Web Traffic (React App)
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # SSH (For Jenkins to deploy)
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Prometheus Dashboard
+  ingress {
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Grafana Dashboard
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Allow the server to download updates
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# 4. Provision the EC2 Server
+resource "aws_instance" "spa_server" {
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.micro"
+  vpc_security_group_ids = [aws_security_group.spa_sg.id]
+
+  # CRITICAL: Replace this with your actual AWS Key Pair name!
+  key_name               = "devops-key" 
+
+  # 5. Boot Script: Install Docker and Docker Compose automatically
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo yum update -y
+              sudo yum install docker -y
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -aG docker ec2-user
+              
+              # Install Docker Compose
+              curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              EOF
+
+  tags = {
+    Name = "DevOps-SPA-Host"
+  }
+}
+
+# Output the public IP address when finished
+output "server_public_ip" {
+  value = aws_instance.spa_server.public_ip
+}
+</file>
+
+<file path="Jenkinsfile">
+pipeline {
+    agent any
+    
+    environment {
+        // Put your actual details here
+        DOCKER_USER = 'bhaumik182001' 
+        REPO_URL = 'https://github.com/Bhaumik182001/my-blog-app.git'
+        EC2_IP = '13.234.48.232'
+    }
+
+    stages {
+        stage('Clone') {
+            steps {
+                git branch: 'main', url: "${REPO_URL}"
+            }
+        }
+
+        stage('Build & Push') {
+            steps {
+                script {
+                    // Jenkins logs into Docker Hub
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'DOCK_PASS', usernameVariable: 'DOCK_USER')]) {
+                        sh "echo \$DOCK_PASS | docker login -u \$DOCK_USER --password-stdin"
+                    }
+                    // Fixed: Using the correct DOCKER_USER variable from the environment block
+                    sh "docker build -t ${DOCKER_USER}/devops-spa:latest ."
+                    sh "docker push ${DOCKER_USER}/devops-spa:latest"
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sshagent(['aws-ec2-key']) {
+                    // Copy compose and prometheus files to AWS
+                    sh "scp -o StrictHostKeyChecking=no docker-compose.yml prometheus.yml ec2-user@${EC2_IP}:/home/ec2-user/"
+                    
+                    // FIXED: Inject the DOCKER_USER variable directly into the AWS shell session
+                    sh "ssh -o StrictHostKeyChecking=no ec2-user@${EC2_IP} 'DOCKER_USERNAME=${DOCKER_USER} docker-compose up -d --pull always'"
+                }
+            }
+        }
+    }
+}
 </file>
 
 <file path="nginx.conf">
@@ -238,6 +395,16 @@ export default {
 }
 </file>
 
+<file path="prometheus.yml">
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+</file>
+
 <file path="public/favicon.svg">
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="46" fill="none" viewBox="0 0 48 46"><path fill="#863bff" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" style="fill:#863bff;fill:color(display-p3 .5252 .23 1);fill-opacity:1"/><mask id="a" width="48" height="46" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M25.842 44.938c-.664.844-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.183c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.498 0-3.579-1.842-3.579H1.133c-.92 0-1.456-1.04-.92-1.787L9.91.473c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.578 1.842 3.578h11.377c.943 0 1.473 1.088.89 1.832L25.843 44.94z" style="fill:#000;fill-opacity:1"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#ede6ff" rx="5.508" ry="14.704" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -4.47 31.516)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#ede6ff" rx="10.399" ry="29.851" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -39.328 7.883)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#7e14ff" rx="5.508" ry="30.487" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -25.913 -14.639)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -32.644 -3.334)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -34.34 30.47)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#ede6ff" rx="14.072" ry="22.078" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="rotate(93.35 24.506 48.493)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx=".387" cy="8.972" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(39.51 .387 8.972)"/></g><g filter="url(#k)"><ellipse cx="47.523" cy="-6.092" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 47.523 -6.092)"/></g><g filter="url(#l)"><ellipse cx="41.412" cy="6.333" fill="#47bfff" rx="5.971" ry="9.665" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 41.412 6.333)"/></g><g filter="url(#m)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#n)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#o)"><ellipse cx="35.651" cy="29.907" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 35.651 29.907)"/></g><g filter="url(#p)"><ellipse cx="38.418" cy="32.4" fill="#47bfff" rx="5.971" ry="15.297" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 38.418 32.4)"/></g></g><defs><filter id="b" width="60.045" height="41.654" x="-19.77" y="16.149" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-54.613" y="-7.533" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-49.64" y="2.03" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-45.045" y="20.029" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-43.513" y="21.178" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="15.756" y="-17.901" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-27.636" y="-22.853" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="20.116" y="-38.415" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="24.641" y="-11.323" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="8.244" y="-2.416" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="18.713" y="10.588" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter></defs></svg>
 </file>
@@ -267,25 +434,6 @@ export default {
     <path fill="#08060d" fill-rule="evenodd" d="M1.893 1.98c.052.072 1.245 1.769 2.653 3.77l2.892 4.114c.183.261.333.48.333.486s-.068.089-.152.183l-.522.593-.765.867-3.597 4.087c-.375.426-.734.834-.798.905a1 1 0 0 0-.118.148c0 .01.236.017.664.017h.663l.729-.83c.4-.457.796-.906.879-.999a692 692 0 0 0 1.794-2.038c.034-.037.301-.34.594-.675l.551-.624.345-.392a7 7 0 0 1 .34-.374c.006 0 .93 1.306 2.052 2.903l2.084 2.965.045.063h2.275c1.87 0 2.273-.003 2.266-.021-.008-.02-1.098-1.572-3.894-5.547-2.013-2.862-2.28-3.246-2.273-3.266.008-.019.282-.332 2.085-2.38l2-2.274 1.567-1.782c.022-.028-.016-.03-.65-.03h-.674l-.3.342a871 871 0 0 1-1.782 2.025c-.067.075-.405.458-.75.852a100 100 0 0 1-.803.91c-.148.172-.299.344-.99 1.127-.304.343-.32.358-.345.327-.015-.019-.904-1.282-1.976-2.808L6.365 1.85H1.8zm1.782.91 8.078 11.294c.772 1.08 1.413 1.973 1.425 1.984.016.017.241.02 1.05.017l1.03-.004-2.694-3.766L7.796 5.75 5.722 2.852l-1.039-.004-1.039-.004z" clip-rule="evenodd"/>
   </symbol>
 </svg>
-</file>
-
-<file path="README.md">
-# React + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
 </file>
 
 <file path="src/App.css">
@@ -795,6 +943,193 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
 })
+</file>
+
+<file path=".gitignore">
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.pem
+</file>
+
+<file path="Dockerfile">
+# Stage 1: Build the React application
+FROM node:22-alpine AS build
+WORKDIR /app
+
+# Copy package.json and package-lock.json (if available)
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the rest of the application code
+COPY . .
+
+# Build the application for production
+RUN npm run build
+
+# Stage 2: Serve the application with Nginx
+FROM nginx:alpine
+
+# Remove default nginx static assets
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy the nginx configuration file
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy the build output from Stage 1 to nginx html directory
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Expose port 80
+EXPOSE 80
+
+# Start Nginx server
+CMD ["nginx", "-g", "daemon off;"]
+</file>
+
+<file path="README.md">
+# 🚀 Enterprise DevOps Pipeline: EngBlog SPA
+
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Docker](https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white)
+![Jenkins](https://img.shields.io/badge/Jenkins-D24939?style=for-the-badge&logo=jenkins&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
+
+## 📌 Project Overview
+This repository demonstrates a production-grade, zero-downtime DevOps lifecycle. Instead of focusing on heavy application logic, this project utilizes a **"Thin Slice" architectural approach**: a lightweight, high-performance Single Page Application (React/Vite) acts as the payload to showcase a fully automated, scalable, and monitored cloud infrastructure.
+
+The pipeline covers the entire software development lifecycle (SDLC), from Infrastructure as Code (IaC) and containerization to automated CI/CD deployments and real-time observability.
+
+## 🎓 Academic Alignment (INT377)
+This project was strictly engineered to demonstrate mastery of essential Cloud Computing and DevOps principles:
+* **CO1 & CO2 (Containerization):** Implemented via a highly optimized, multi-stage Docker build utilizing Alpine Linux and Nginx.
+* **CO3 (Infrastructure as Code):** Cloud provisioning is entirely automated using HashiCorp Terraform targeting AWS EC2.
+* **CO4 (CI/CD Pipelines):** A Jenkins declarative pipeline, triggered by GitHub Webhooks, automates the build and deployment process.
+* **CO5 (Observability):** Container health and system metrics are actively scraped by Prometheus and visualized via a Grafana dashboard.
+
+---
+
+## 🏗️ Architecture & Flow
+1. **Version Control:** Developer pushes code to the `main` branch on GitHub.
+2. **Infrastructure (Terraform):** An AWS EC2 `t3.micro` instance and corresponding Security Groups (allowing HTTP and SSH) are provisioned via code.
+3. **CI/CD Build (Jenkins):** Jenkins catches the GitHub Webhook, clones the repository, and initiates the build pipeline.
+4. **Containerization (Docker):** A multi-stage build triggers:
+    * *Stage 1 (Node):* Installs dependencies and compiles the React application (`npm run build`).
+    * *Stage 2 (Nginx):* Copies the static `dist` files and a custom `nginx.conf` (designed to resolve SPA routing issues) into an ultra-lightweight Alpine container.
+5. **Deployment:** The container is securely deployed and run on the AWS EC2 instance.
+6. **Observability:** `cAdvisor` exposes container resource usage, **Prometheus** aggregates the metrics, and **Grafana** provides a real-time visualization of CPU/Memory utilization.
+
+---
+
+## 🛠️ Technology Stack
+
+### Application
+* **Frontend:** React.js (v19), Vite, Tailwind CSS
+* **Web Server:** Nginx (Alpine)
+
+### DevOps & Infrastructure
+* **Containerization:** Docker (Multi-stage builds)
+* **Infrastructure as Code (IaC):** HashiCorp Terraform
+* **Cloud Provider:** Amazon Web Services (AWS EC2, Security Groups)
+* **CI/CD:** Jenkins, GitHub Webhooks, Ngrok (for local tunneling)
+* **Monitoring & Observability:** cAdvisor, Prometheus, Grafana
+
+---
+
+## 📁 Repository Structure
+
+* `src/` - React Application Source Code (EngBlog)
+* `public/` - Static Assets & SVGs
+* `Dockerfile` - Multi-stage build instructions for Node + Nginx
+* `nginx.conf` - Custom Nginx configuration for SPA routing
+* `main.tf` - Terraform Infrastructure as Code script
+* `Jenkinsfile` - Declarative CI/CD pipeline definition
+* `package.json` - Node dependencies and build scripts
+
+---
+
+## 🚀 Quick Start & Setup Guide
+
+This guide provides step-by-step instructions to reproduce this DevOps pipeline from scratch.
+
+### Prerequisites
+Ensure the following tools are installed on your local machine:
+* Git
+* Docker Desktop
+* HashiCorp Terraform
+* AWS CLI (configured with valid IAM credentials via `aws configure`)
+* Ngrok (for local Jenkins tunneling)
+
+### Step 1: Local Setup & Validation
+Clone the repository and verify the multi-stage Docker build locally.
+
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+cd YOUR_REPO_NAME
+docker build -t devops-spa .
+docker run -d -p 8080:80 devops-spa
+
+Navigate to `http://localhost:8080` in your browser to verify the React application is running correctly behind the Nginx web server.
+
+### Step 2: Infrastructure Provisioning (Terraform)
+Automate the creation of the AWS environment. The `main.tf` script will provision a `t2.micro` instance, configure security groups (ports 80, 22), and automatically install Docker upon boot.
+
+terraform init
+terraform plan
+terraform apply -auto-approve
+
+*Take note of the public AWS IP address outputted at the end of the Terraform run.*
+
+### Step 3: CI/CD Pipeline Configuration (Jenkins)
+Ensure you have a Jenkins instance running (either locally via Docker or hosted).
+
+1. **Expose Local Jenkins (If applicable):** Run `ngrok http 8080` to generate a public URL for your local Jenkins container.
+2. **Configure GitHub Webhook:** In your GitHub repository settings, navigate to Webhooks. Add your Jenkins URL (e.g., `https://your-ngrok-url.app/github-webhook/`) and set the Content type to `application/json`.
+3. **Create Jenkins Pipeline:** Create a new Pipeline project in Jenkins, connect it to your GitHub repository, and point it to the `Jenkinsfile`.
+4. **Trigger Deployment:** Push a code change to the `main` branch. Jenkins will automatically intercept the webhook, build the new Docker image, and SSH into the AWS EC2 instance to deploy it.
+
+### Step 4: Observability & Monitoring
+Once the application is deployed, the monitoring stack (cAdvisor, Prometheus, Grafana) will initialize alongside it.
+
+1. Navigate to `http://YOUR_AWS_IP:3000` to access the Grafana dashboard.
+2. Add Prometheus (`http://YOUR_AWS_IP:9090`) as the data source.
+3. Import the standard Docker Monitoring dashboard to visualize real-time infrastructure metrics.
+
+---
+
+## 👨‍💻 Author
+**Bhaumik**
+*Software Developer | Cloud Infrastructure & DevOps*
 </file>
 
 </files>
