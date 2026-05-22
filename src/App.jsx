@@ -27,7 +27,7 @@ const Navbar = () => (
             <span className="text-white font-bold text-lg">E</span>
           </div>
           <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-100 to-slate-400 group-hover:to-slate-200 transition-colors">
-            EngBlog
+            Engineering Blog
           </span>
         </Link>
         <div className="flex space-x-8">
