@@ -1,24 +1,332 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --slate-50: 248 250 252;
+    --slate-100: 241 245 249;
+    --slate-200: 226 232 240;
+    --slate-300: 203 213 225;
+    --slate-400: 148 163 184;
+    --slate-500: 100 116 139;
+    --slate-600: 71 85 105;
+    --slate-700: 51 65 85;
+    --slate-800: 30 41 59;
+    --slate-900: 15 23 42;
+    --slate-950: 2 6 23;
+  }
+
+  [data-theme="oled"] {
+    --slate-50: 255 255 255;
+    --slate-100: 255 255 255;
+    --slate-200: 255 255 255;
+    --slate-300: 187 187 204;
+    --slate-400: 136 136 170;
+    --slate-500: 68 68 85;
+    --slate-600: 38 38 38;
+    --slate-700: 26 26 26;
+    --slate-800: 17 17 17;
+    --slate-900: 10 10 10;
+    --slate-950: 0 0 0;
+  }
+
+  [data-theme="light"] {
+    --slate-50: 0 0 0;
+    --slate-100: 2 6 23;
+    --slate-200: 15 23 42;
+    --slate-300: 51 65 85;
+    --slate-400: 71 85 105;
+    --slate-500: 148 163 184;
+    --slate-600: 203 213 225;
+    --slate-700: 226 232 240;
+    --slate-800: 241 245 249;
+    --slate-900: 255 255 255;
+    --slate-950: 248 250 252;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
   body {
-    @apply bg-slate-950 text-slate-200 antialiased selection:bg-cyan-500/30;
+    @apply bg-slate-950 text-slate-200 antialiased selection:bg-cyan-500/30 selection:text-cyan-100;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  }
+
+  /* Refined Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-slate-950;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-800 rounded-full hover:bg-slate-700;
+    border: 1px solid theme('colors.slate.900');
+  }
+
+  /* Font mono override */
+  code, pre, kbd, samp {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
   }
 }
 
 @layer components {
+  /* ── Navigation ── */
   .glass-nav {
-    @apply bg-slate-950/80 backdrop-blur-md border-b border-slate-800/50 sticky top-0 z-50;
+    @apply bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/60 sticky top-0 z-50;
   }
+
+  /* ── Cards ── */
   .card {
-    @apply bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:shadow-cyan-500/20 hover:border-slate-700;
+    @apply bg-slate-900/40 backdrop-blur-sm border border-slate-800/80 rounded-2xl p-6 
+           transition-all duration-300 hover:-translate-y-1.5 
+           hover:shadow-[0_20px_60px_-10px] hover:shadow-cyan-500/10 
+           hover:border-slate-700/80;
   }
+
+  /* ── Buttons ── */
   .btn-primary {
-    @apply px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-medium rounded-lg transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/25 hover:opacity-90 focus:ring-2 focus:ring-cyan-500 focus:outline-none;
+    @apply px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 
+           font-extrabold rounded-xl transition-all duration-300 
+           hover:shadow-lg hover:shadow-cyan-500/30 hover:opacity-95 
+           focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-950 focus:outline-none
+           active:scale-95;
   }
+
+  /* ── Inputs ── */
   .input-field {
-    @apply w-full px-4 py-3 bg-slate-950/50 border border-slate-800 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none transition-all duration-300 text-slate-200 placeholder-slate-500;
+    @apply w-full px-4 py-3 bg-slate-900/60 border border-slate-800 rounded-xl 
+           focus:ring-2 focus:ring-cyan-500/70 focus:border-cyan-500/50 outline-none 
+           transition-all duration-300 text-slate-200 placeholder-slate-600;
+  }
+
+  /* ── Gradient text ── */
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-400;
+  }
+
+  /* ── Glow decorations ── */
+  .glow-cyan {
+    box-shadow: 0 0 40px -10px theme('colors.cyan.500 / 40%');
+  }
+  .glow-blue {
+    box-shadow: 0 0 40px -10px theme('colors.blue.500 / 40%');
+  }
+
+  /* ── Dot grid hero background ── */
+  .dot-grid {
+    background-image: radial-gradient(circle, theme('colors.slate.700 / 35%') 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* ── Section divider ── */
+  .section-divider {
+    @apply border-t border-slate-800/60 my-16;
+  }
+
+  /* ── Markdown Prose ── */
+  .prose h1 {
+    @apply font-black text-slate-100 tracking-tight;
+  }
+  .prose h2 {
+    @apply font-black text-slate-100 tracking-tight;
+  }
+  .prose h3 {
+    @apply font-bold text-slate-200;
+  }
+  .prose p {
+    @apply text-slate-300 leading-[1.85] text-[15px];
+  }
+  .prose strong {
+    @apply text-slate-100 font-bold;
+  }
+  .prose a {
+    @apply text-cyan-400 underline underline-offset-2 hover:text-cyan-300 transition-colors;
+  }
+  .prose code {
+    @apply bg-slate-900 text-cyan-400 font-mono px-1.5 py-0.5 rounded text-[13px] border border-slate-800;
+  }
+  .prose pre {
+    @apply bg-slate-900/80 border border-slate-800 p-5 rounded-xl font-mono text-[13px] my-6 overflow-x-auto text-slate-300 leading-relaxed;
+  }
+  .prose blockquote {
+    @apply border-l-4 border-cyan-500/60 bg-slate-900/40 px-6 py-4 rounded-r-xl italic my-6 text-slate-400;
+  }
+  .prose ul {
+    @apply list-disc pl-6 space-y-1.5;
+  }
+  .prose ol {
+    @apply list-decimal pl-6 space-y-1.5;
+  }
+  .prose li {
+    @apply text-slate-300;
+  }
+  .prose hr {
+    @apply border-slate-800 my-8;
+  }
+  .prose table {
+    @apply w-full text-sm border-collapse;
+  }
+  .prose th {
+    @apply text-left font-bold text-slate-200 border-b border-slate-800 pb-2;
+  }
+  .prose td {
+    @apply text-slate-400 border-b border-slate-900 py-2;
   }
 }
+
+/* ─── Keyframe Animations ─────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px -5px theme('colors.cyan.500 / 30%'); }
+  50%       { box-shadow: 0 0 35px -5px theme('colors.cyan.500 / 60%'); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-8px); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ─── Utility Classes ─────────────────────────────── */
+
+.animate-fadeIn {
+  animation: fadeIn 0.45s ease-out forwards;
+}
+
+.animate-fadeInScale {
+  animation: fadeInScale 0.4s ease-out forwards;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, theme('colors.slate.700 / 40%') 50%, transparent 100%);
+  background-size: 200% auto;
+  animation: shimmer 2.5s linear infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+/* ─── Stagger children utility ────────────────────── */
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 80ms; }
+.stagger > *:nth-child(3) { animation-delay: 160ms; }
+.stagger > *:nth-child(4) { animation-delay: 240ms; }
+.stagger > *:nth-child(5) { animation-delay: 320ms; }
+.stagger > *:nth-child(6) { animation-delay: 400ms; }
+
+/* ─── Keep text dark on bright buttons/badges (No inversion) ─── */
+.btn-primary,
+button.bg-gradient-to-r,
+a.bg-gradient-to-r,
+div.bg-gradient-to-r,
+.bg-cyan-500,
+.bg-white\/95,
+.bg-white,
+.bg-emerald-500 {
+  color: #020617 !important;
+}
+
+/* Retain white text for elements explicitly styled with .text-white */
+.text-white,
+.text-white *,
+.btn-primary.text-white,
+button.bg-gradient-to-r.text-white {
+  color: #ffffff !important;
+}
+
+/* Ensure SVG icons inside dark-text elements are also dark */
+.btn-primary svg,
+button.bg-gradient-to-r svg,
+a.bg-gradient-to-r svg,
+.bg-cyan-500 svg,
+.bg-white\/95 svg,
+.bg-white svg,
+.bg-emerald-500 svg {
+  stroke: #020617 !important;
+}
+
+.text-white svg,
+.text-white * svg {
+  stroke: currentColor !important;
+}
+
+/* Light mode specific scrollbar overrides */
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background-color: #f1f5f9 !important;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1 !important;
+  border-color: #f8fafc !important;
+}
+
+/* Light mode specific dot grid background override */
+[data-theme="light"] .dot-grid {
+  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.15) 1px, transparent 1px) !important;
+}
+
+/* Light mode specific shadow overrides for glass nav and cards */
+[data-theme="light"] .glass-nav {
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03) !important;
+  background-color: rgba(255, 255, 255, 0.8) !important;
+  border-color: rgba(226, 232, 240, 0.8) !important;
+}
+[data-theme="light"] .card {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.02) !important;
+  border-color: rgba(226, 232, 240, 0.8) !important;
+}
+[data-theme="light"] .card:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.05) !important;
+  border-color: rgba(203, 213, 225, 0.9) !important;
+}
+
+/* Fix text colors inside the user menu dropdown in light mode */
+[data-theme="light"] .absolute.right-0.mt-2.w-56 {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Fix dashboard stats progress backgrounds in light mode */
+[data-theme="light"] .bg-slate-950\/50 {
+  background-color: rgba(241, 245, 249, 0.8) !important;
+}
+
+/* Fix confirm modal overlays */
+[data-theme="light"] .absolute.inset-0.bg-slate-950\/80 {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+}
+
