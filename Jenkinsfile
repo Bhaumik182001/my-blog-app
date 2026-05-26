@@ -5,7 +5,7 @@ pipeline {
 
         DOCKER_USER = 'bhaumik182001' 
         REPO_URL = 'https://github.com/Bhaumik182001/my-blog-app.git'
-        EC2_IP = '13.233.178.72'
+        EC2_IP = '3.6.88.149'
     }
 
     stages {
