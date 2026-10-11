@@ -106,18 +106,26 @@ resource "aws_security_group" "spa_sg" {
 resource "aws_launch_template" "spa_lt" {
   name_prefix   = "devops-spa-lt-"
   image_id      = data.aws_ami.amazon_linux.id
-  instance_type = "t3.medium"
+  instance_type = "t3.micro"
   key_name      = var.key_name
 
   vpc_security_group_ids = [aws_security_group.spa_sg.id]
 
   # Boot script: install and start K3s (lightweight Kubernetes)
-  user_data = base64encode(<<-EOF
+  user_data = base64encode(<<-EOT
     #!/bin/bash
+    # Configure 2GB swap space for K3s on 1GB RAM instance
+    dd if=/dev/zero of=/swapfile bs=128M count=16
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
+
+    # System update and K3s installation
     yum update -y
     curl -sfL https://get.k3s.io | sh -
     sudo chmod 644 /etc/rancher/k3s/k3s.yaml
-  EOF
+  EOT
   )
 
   tag_specifications {
