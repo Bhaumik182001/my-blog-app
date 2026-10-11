@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect } from "react";
-import { posts as initialPosts } from "../data/posts";
 import { authors } from "../data/authors";
+
 
 const AppContext = createContext();
 
@@ -98,6 +98,7 @@ function computeStreak(readDates) {
 // ─── Initial state ─────────────────────────────────────
 const initialState = {
   posts: [],
+  isLoading: true,          // true until API fetch completes (or fails)
   currentUser: SEED_USERS.alex,
   bookmarks: [],
   comments: {},
@@ -109,12 +110,17 @@ const initialState = {
   userReactions: {},      // { [postSlug]: { heart: false, fire: false, idea: false, mindblown: false, clap: false } }
 };
 
+
 // ─── Reducer ───────────────────────────────────────────
 function appReducer(state, action) {
   switch (action.type) {
+    case "SET_LOADING":
+      return { ...state, isLoading: action.payload };
+
     case "INITIALIZE_STATE":
       return {
         ...state,
+        isLoading:     false,
         posts:         action.payload.posts,
         bookmarks:     action.payload.bookmarks,
         comments:      action.payload.comments,
@@ -125,6 +131,7 @@ function appReducer(state, action) {
         focusSessions: action.payload.focusSessions || 0,
         userReactions: action.payload.userReactions || {},
       };
+
 
     case "SWITCH_USER":
       return {
@@ -325,7 +332,7 @@ function appReducer(state, action) {
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
-  // Load from localStorage on mount
+  // ── Load state on mount: fetch posts from API, hydrate rest from localStorage ──
   useEffect(() => {
     const currentUserId = localStorage.getItem(LOCAL_STORAGE_KEY_CURRENT_USER_ID) || "alex";
     const user = SEED_USERS[currentUserId] || SEED_USERS.alex;
@@ -337,7 +344,6 @@ export function AppProvider({ children }) {
     const userFocusSessionsKey = `engblog_focus_sessions_${currentUserId}`;
     const userReactionsKey     = `engblog_reactions_${currentUserId}`;
 
-    const storedPosts         = localStorage.getItem(LOCAL_STORAGE_KEY_POSTS);
     const storedBookmarks     = localStorage.getItem(userBookmarksKey);
     const storedComments      = localStorage.getItem(LOCAL_STORAGE_KEY_COMMENTS);
     const storedRead          = localStorage.getItem(userReadPostsKey);
@@ -351,29 +357,57 @@ export function AppProvider({ children }) {
       try { return JSON.parse(raw); } catch { return fallback; }
     };
 
-    // Ensure posts have reactions structured
-    const loadedPosts = safe(storedPosts, initialPosts).map(p => {
-      if (!p.reactions) {
-        p.reactions = { heart: p.likes || 0, fire: 0, idea: 0, mindblown: 0, clap: 0 };
-      }
-      return p;
-    });
+    // Fetch posts from backend API; fall back to [] if unavailable
+    dispatch({ type: "SET_LOADING", payload: true });
 
-    dispatch({
-      type: "INITIALIZE_STATE",
-      payload: {
-        posts:         loadedPosts,
-        bookmarks:     safe(storedBookmarks, []),
-        comments:      safe(storedComments, initialComments),
-        readPosts:     safe(storedRead, []),
-        readDates:     safe(storedStreak, []),
-        notifications: safe(storedNotifications, []),
-        focusSessions: safe(storedFocusSessions, 0),
-        userReactions: safe(storedReactions, {}),
-        currentUser:   user
-      }
-    });
+    fetch("/api/posts")
+      .then((res) => {
+        if (!res.ok) throw new Error(`API responded with ${res.status}`);
+        return res.json();
+      })
+      .then((apiPosts) => {
+        // Ensure every post has a reactions object
+        const loadedPosts = apiPosts.map((p) => {
+          if (!p.reactions) {
+            p.reactions = { heart: p.likes || 0, fire: 0, idea: 0, mindblown: 0, clap: 0 };
+          }
+          return p;
+        });
+
+        dispatch({
+          type: "INITIALIZE_STATE",
+          payload: {
+            posts:         loadedPosts,
+            bookmarks:     safe(storedBookmarks, []),
+            comments:      safe(storedComments, initialComments),
+            readPosts:     safe(storedRead, []),
+            readDates:     safe(storedStreak, []),
+            notifications: safe(storedNotifications, []),
+            focusSessions: safe(storedFocusSessions, 0),
+            userReactions: safe(storedReactions, {}),
+            currentUser:   user,
+          },
+        });
+      })
+      .catch((err) => {
+        console.warn("[AppContext] Failed to fetch posts from API, falling back to empty list.", err);
+        dispatch({
+          type: "INITIALIZE_STATE",
+          payload: {
+            posts:         [],
+            bookmarks:     safe(storedBookmarks, []),
+            comments:      safe(storedComments, initialComments),
+            readPosts:     safe(storedRead, []),
+            readDates:     safe(storedStreak, []),
+            notifications: safe(storedNotifications, []),
+            focusSessions: safe(storedFocusSessions, 0),
+            userReactions: safe(storedReactions, {}),
+            currentUser:   user,
+          },
+        });
+      });
   }, []);
+
 
   // Persist posts globally
   useEffect(() => {
@@ -476,15 +510,116 @@ export function AppProvider({ children }) {
     setTimeout(() => dispatch({ type: "REMOVE_TOAST", payload: id }), 3500);
   };
 
+  // ── Helper: createPost (API + local fallback) ───────
+  const createPost = async (postData) => {
+    try {
+      const res = await fetch("/api/posts", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(postData),
+      });
+      if (!res.ok) throw new Error(`API responded with ${res.status}`);
+      const newPost = await res.json();
+      if (!newPost.reactions) {
+        newPost.reactions = { heart: 0, fire: 0, idea: 0, mindblown: 0, clap: 0 };
+      }
+      dispatch({ type: "CREATE_POST", payload: newPost });
+      showToast("Post published!", "success");
+      return newPost;
+    } catch (err) {
+      console.warn("[AppContext] createPost API call failed, using local fallback.", err);
+      const localPost = {
+        id:            `post-${Date.now()}`,
+        slug:          postData.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
+        date:          new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
+        likes:         0,
+        reactions:     { heart: 0, fire: 0, idea: 0, mindblown: 0, clap: 0 },
+        comments:      [],
+        readTime:      postData.readTime || "5 min read",
+        featured:      postData.featured || false,
+        coverGradient: postData.coverGradient || "from-gray-500 to-gray-600",
+        ...postData,
+      };
+      dispatch({ type: "CREATE_POST", payload: localPost });
+      showToast("Post published (offline mode)!", "success");
+      return localPost;
+    }
+  };
+
+  // ── Helper: deletePost (API + optimistic local) ─────
+  const deletePost = async (postId) => {
+    // Optimistic local removal first for immediate UI feedback
+    dispatch({ type: "DELETE_POST", payload: postId });
+    try {
+      const res = await fetch(`/api/posts/${postId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`API responded with ${res.status}`);
+      showToast("Post deleted.", "success");
+    } catch (err) {
+      console.warn("[AppContext] deletePost API call failed, local state already updated.", err);
+      showToast("Post deleted (offline mode).", "success");
+    }
+  };
+
+  // ── Helper: addComment (API + local fallback) ───────
+  const addComment = async (postSlug, commentData) => {
+    try {
+      const res = await fetch(`/api/posts/${postSlug}/comments`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(commentData),
+      });
+      if (!res.ok) throw new Error(`API responded with ${res.status}`);
+      const newComment = await res.json();
+      dispatch({ type: "ADD_COMMENT", payload: { postSlug, comment: newComment } });
+      showToast("Comment posted!", "success");
+      return newComment;
+    } catch (err) {
+      console.warn("[AppContext] addComment API call failed, using local fallback.", err);
+      const localComment = {
+        id:      `c-${Date.now()}`,
+        date:    new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
+        replies: [],
+        ...commentData,
+      };
+      dispatch({ type: "ADD_COMMENT", payload: { postSlug, comment: localComment } });
+      showToast("Comment posted (offline mode)!", "success");
+      return localComment;
+    }
+  };
+
+  // ── Helper: toggleReaction (optimistic + API sync) ──
+  const toggleReaction = async (postSlug, reactionType) => {
+    // Optimistic local update for snappy UX
+    dispatch({ type: "TOGGLE_REACTION", payload: { postSlug, reactionType } });
+
+    // Determine the new active state after the local toggle
+    const currentReactions = state.userReactions[postSlug] || {};
+    const nowActive = !currentReactions[reactionType];
+
+    try {
+      await fetch(`/api/posts/${postSlug}/reactions`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ reactionType, active: nowActive }),
+      });
+    } catch (err) {
+      console.warn("[AppContext] toggleReaction API sync failed (local state preserved).", err);
+    }
+  };
+
   // ── Helper: streak ──────────────────────────────────
   const readingStreak = computeStreak(state.readDates);
 
   return (
-    <AppContext.Provider value={{ state, dispatch, showToast, readingStreak, switchUser }}>
+    <AppContext.Provider value={{
+      state, dispatch, showToast, readingStreak, switchUser,
+      createPost, deletePost, addComment, toggleReaction,
+    }}>
       {children}
     </AppContext.Provider>
   );
 }
+
 
 export function useApp() {
   const context = useContext(AppContext);

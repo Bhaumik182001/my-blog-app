@@ -1,9 +1,24 @@
-# 1. Define the Cloud Provider (AWS Mumbai Region)
+# ─────────────────────────────────────────────────────────────
+# Provider
+# ─────────────────────────────────────────────────────────────
 provider "aws" {
-  region = "ap-south-1" 
+  region = "ap-south-1"
 }
 
-# 2. Automatically find the latest Amazon Linux image
+# ─────────────────────────────────────────────────────────────
+# Variables
+# ─────────────────────────────────────────────────────────────
+variable "key_name" {
+  description = "Name of the AWS EC2 Key Pair to use for SSH access"
+  type        = string
+  default     = "devops-key"
+}
+
+# ─────────────────────────────────────────────────────────────
+# Data sources
+# ─────────────────────────────────────────────────────────────
+
+# Latest Amazon Linux 2023 AMI (x86_64)
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
@@ -14,81 +29,163 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# 3. Create a Security Group (Firewall)
+# Default VPC
+data "aws_vpc" "default" {
+  default = true
+}
+
+# All subnets in the default VPC
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+# ─────────────────────────────────────────────────────────────
+# Security Group
+# ─────────────────────────────────────────────────────────────
 resource "aws_security_group" "spa_sg" {
   name        = "devops-spa-security-group"
-  description = "Allow HTTP for the web, SSH for Jenkins, and Ports for Monitoring"
+  description = "Allow HTTP, SSH, Kubernetes NodePort, and K8s API access"
+  vpc_id      = data.aws_vpc.default.id
 
-  # Web Traffic (React App)
+  # HTTP — serves the frontend SPA
   ingress {
+    description = "HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # SSH (For Jenkins to deploy)
+  # SSH — Jenkins remote deployment
   ingress {
+    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Prometheus Dashboard
+  # NodePort 30080 — Kubernetes frontend-service external access
   ingress {
-    from_port   = 9090
-    to_port     = 9090
+    description = "Kubernetes NodePort (frontend)"
+    from_port   = 30080
+    to_port     = 30080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Grafana Dashboard
+  # Port 6443 — Kubernetes API (remote kubectl / Jenkins kubectl commands)
   ingress {
-    from_port   = 3000
-    to_port     = 3000
+    description = "Kubernetes API Server"
+    from_port   = 6443
+    to_port     = 6443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Allow the server to download updates
+  # Egress — allow all outbound traffic (package installs, Docker pulls, etc.)
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-}
-
-# 4. Provision the EC2 Server
-resource "aws_instance" "spa_server" {
-  ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = "t3.micro"
-  vpc_security_group_ids = [aws_security_group.spa_sg.id]
-
-  # CRITICAL: Replace this with your actual AWS Key Pair name!
-  key_name               = "devops-key" 
-
-  # 5. Boot Script: Install Docker and Docker Compose automatically
-  user_data = <<-EOF
-              #!/bin/bash
-              sudo yum update -y
-              sudo yum install docker -y
-              sudo systemctl start docker
-              sudo systemctl enable docker
-              sudo usermod -aG docker ec2-user
-              
-              # Install Docker Compose
-              curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
-              sudo chmod +x /usr/local/bin/docker-compose
-              EOF
 
   tags = {
-    Name = "DevOps-SPA-Host"
+    Name = "devops-spa-sg"
   }
 }
 
-# Output the public IP address when finished
-output "server_public_ip" {
-  value = aws_instance.spa_server.public_ip
+# ─────────────────────────────────────────────────────────────
+# Launch Template
+# ─────────────────────────────────────────────────────────────
+resource "aws_launch_template" "spa_lt" {
+  name_prefix   = "devops-spa-lt-"
+  image_id      = data.aws_ami.amazon_linux.id
+  instance_type = "t3.medium"
+  key_name      = var.key_name
+
+  vpc_security_group_ids = [aws_security_group.spa_sg.id]
+
+  # Boot script: install and start K3s (lightweight Kubernetes)
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    yum update -y
+    curl -sfL https://get.k3s.io | sh -
+    sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+  EOF
+  )
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "DevOps-Microservices-Node"
+    }
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+    tags = {
+      Name = "DevOps-Microservices-Node"
+    }
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# ─────────────────────────────────────────────────────────────
+# Auto Scaling Group
+# ─────────────────────────────────────────────────────────────
+resource "aws_autoscaling_group" "spa_asg" {
+  name_prefix         = "devops-spa-asg-"
+  min_size            = 1
+  max_size            = 3
+  desired_capacity    = 1
+  health_check_type   = "EC2"
+  vpc_zone_identifier = data.aws_subnets.default.ids
+
+  launch_template {
+    id      = aws_launch_template.spa_lt.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "DevOps-Microservices-Node"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ManagedBy"
+    value               = "Terraform"
+    propagate_at_launch = true
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# ─────────────────────────────────────────────────────────────
+# Outputs
+# ─────────────────────────────────────────────────────────────
+output "autoscaling_group_name" {
+  description = "Name of the Auto Scaling Group managing K3s nodes"
+  value       = aws_autoscaling_group.spa_asg.name
+}
+
+output "launch_template_id" {
+  description = "ID of the EC2 Launch Template"
+  value       = aws_launch_template.spa_lt.id
+}
+
+output "security_group_id" {
+  description = "ID of the security group attached to ASG instances"
+  value       = aws_security_group.spa_sg.id
 }
