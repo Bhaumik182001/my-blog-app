@@ -2,9 +2,19 @@
 
 const express = require("express");
 const cors    = require("cors");
+const client  = require("prom-client");
+
+// ─── Prometheus Instrumentation ──────────────────────────────────────────────
+client.collectDefaultMetrics({ timeout: 5000 });
+
+const httpRequestDurationMicroseconds = new client.Histogram({
+  name: "http_request_duration_ms",
+  help: "Duration of HTTP requests in ms",
+  labelNames: ["method", "route", "code"],
+  buckets: [50, 100, 200, 300, 400, 500, 750, 1000],
+});
 
 // ─── Seed data (in-memory store) ──────────────────────────────────────────────
-// Deep-clone the seed so in-memory mutations don't affect the require() cache
 const { posts: seedPosts } = require("./data/posts");
 let posts = JSON.parse(JSON.stringify(seedPosts));
 
@@ -15,6 +25,25 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Track request durations
+app.use((req, res, next) => {
+  const end = httpRequestDurationMicroseconds.startTimer();
+  res.on("finish", () => {
+    end({
+      route: req.route ? req.route.path : req.path,
+      code: res.statusCode,
+      method: req.method,
+    });
+  });
+  next();
+});
+
+// ─── Metrics Endpoint ─────────────────────────────────────────────────────────
+app.get("/metrics", async (_req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
+});
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 // GET /api/health
@@ -22,12 +51,12 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-// GET /api/posts  – return all posts (content trimmed for list view)
+// GET /api/posts – return all posts
 app.get("/api/posts", (_req, res) => {
   res.json(posts);
 });
 
-// GET /api/posts/:slug  – return a single post by slug
+// GET /api/posts/:slug – return a single post by slug
 app.get("/api/posts/:slug", (req, res) => {
   const post = posts.find((p) => p.slug === req.params.slug);
   if (!post) {
@@ -36,7 +65,7 @@ app.get("/api/posts/:slug", (req, res) => {
   res.json(post);
 });
 
-// POST /api/posts  – create a new post (in-memory)
+// POST /api/posts – create a new post
 app.post("/api/posts", (req, res) => {
   const {
     title, excerpt, content = "", tag = "General",
@@ -69,7 +98,7 @@ app.post("/api/posts", (req, res) => {
   res.status(201).json(newPost);
 });
 
-// DELETE /api/posts/:id  – remove a post by id (in-memory)
+// DELETE /api/posts/:id – remove a post by id
 app.delete("/api/posts/:id", (req, res) => {
   const index = posts.findIndex((p) => p.id === req.params.id);
   if (index === -1) {
@@ -79,7 +108,7 @@ app.delete("/api/posts/:id", (req, res) => {
   res.json({ deleted });
 });
 
-// POST /api/posts/:slug/comments  – add a comment to a post
+// POST /api/posts/:slug/comments – add a comment
 app.post("/api/posts/:slug/comments", (req, res) => {
   const post = posts.find((p) => p.slug === req.params.slug);
   if (!post) {
@@ -105,7 +134,7 @@ app.post("/api/posts/:slug/comments", (req, res) => {
   res.status(201).json(comment);
 });
 
-// POST /api/posts/:slug/reactions  – toggle/update a reaction on a post
+// POST /api/posts/:slug/reactions – toggle/update a reaction
 app.post("/api/posts/:slug/reactions", (req, res) => {
   const post = posts.find((p) => p.slug === req.params.slug);
   if (!post) {
@@ -123,7 +152,6 @@ app.post("/api/posts/:slug/reactions", (req, res) => {
     post.reactions = { heart: 0, fire: 0, idea: 0, mindblown: 0, clap: 0 };
   }
 
-  // active = true means user is toggling ON → increment; false → decrement
   const delta = active ? 1 : -1;
   post.reactions[reactionType] = Math.max(0, (post.reactions[reactionType] || 0) + delta);
   post.likes = Object.values(post.reactions).reduce((a, b) => a + b, 0);
